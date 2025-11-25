@@ -8,18 +8,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: npm ci
+      
+      # CORREÇÃO CRÍTICA: Mudamos de 'ci' para 'install' para funcionar sem lockfile
+      - run: npm install
+      
       - run: npm run build
-      - uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }} 
-          # ATENÇÃO: Se você configurou FIREBASE_TOKEN em vez de Service Account, use:
-          # firebaseServiceAccount: "${{ secrets.FIREBASE_TOKEN }}" 
-          # Mas o ideal para essa action específica é Service Account. 
-          # Se usou o FIREBASE_TOKEN (login:ci), o comando de deploy muda um pouco.
-          # Vamos usar o script genérico abaixo que funciona com o token que você já pegou:
-          
+      
+      # Passo de Deploy simplificado usando o Token que você já configurou
       - name: Deploy to Firebase
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
