@@ -1,32 +1,35 @@
-import { Feature } from './types';
+import { Funcionalidade } from './types';
 
-export const MOCK_FEATURES: Feature[] = [
+export const MOCK_FUNCIONALIDADES: Funcionalidade[] = [
   {
     id: 'f1',
-    name: 'Conectar Carteira (Metamask)',
-    description: 'Permitir autenticação via Web3.',
-    scores: { valuable: true, usable: true, feasible: 'High', wow: false },
-    size: 'M',
-    risk: 'Green',
-    type: 'UI'
+    projeto_id: 'p1',
+    titulo: 'Conectar Carteira (Web3)',
+    descricao: 'Permitir que usuários se autentiquem usando suas carteiras digitais, como Metamask.',
+    tamanho_camiseta: 'M',
+    risco: 'Baixo',
+    valor_negocio: 9,
+    fator_uau: false,
   },
   {
     id: 'f2',
-    name: 'Galeria de NFTs',
-    description: 'Listar NFTs disponíveis para compra.',
-    scores: { valuable: true, usable: true, feasible: 'High', wow: true },
-    size: 'M',
-    risk: 'Green',
-    type: 'UI'
+    projeto_id: 'p1',
+    titulo: 'Galeria de Ativos Digitais',
+    descricao: 'Exibir uma lista de todos os ativos (NFTs) disponíveis para negociação no marketplace.',
+    tamanho_camiseta: 'M',
+    risco: 'Baixo',
+    valor_negocio: 10,
+    fator_uau: true,
   },
   {
     id: 'f3',
-    name: 'Smart Contract de Leilão',
-    description: 'Lógica de lances e expiração on-chain.',
-    scores: { valuable: true, usable: false, feasible: 'Low', wow: true },
-    size: 'G',
-    risk: 'Red',
-    type: 'Logic'
+    projeto_id: 'p1',
+    titulo: 'Contrato Inteligente de Leilão',
+    descricao: 'Implementar a lógica de lances, tempo de expiração e transferência do ativo on-chain.',
+    tamanho_camiseta: 'G',
+    risco: 'Alto',
+    valor_negocio: 10,
+    fator_uau: true,
   }
 ];
 

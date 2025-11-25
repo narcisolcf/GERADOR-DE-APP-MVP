@@ -1,24 +1,15 @@
 {
   "name": "lean-architect-engine",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
+  "version": "1.0.0",
+  "description": "A modular architecture simulation tool powered by Gemini.",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "start": "serve -s . -l ${PORT:-8080}"
   },
   "dependencies": {
-    "lucide-react": "^0.554.0",
-    "react-dom": "^19.2.0",
-    "@google/genai": "^1.30.0",
-    "react": "^19.2.0",
-    "@supabase/supabase-js": "^2.84.0"
+    "serve": "^14.2.3"
   },
-  "devDependencies": {
-    "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

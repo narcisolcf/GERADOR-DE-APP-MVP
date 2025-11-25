@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, Chat } from "@google/genai";
-import { Feature, ImageGenerationConfig, AnalysisResult, Source } from "../types";
+import { Funcionalidade, ImageGenerationConfig, AnalysisResult, Source } from "../types";
 import { searchService, SearchResult } from "./searchService";
 
 const getAIClient = () => {
@@ -47,9 +47,9 @@ export const getQuickInsight = async (input: string): Promise<string> => {
   const ai = getAIClient();
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash-lite',
-    contents: `Provide a 1-sentence ultra-fast technical feasibility check for: "${input}". Be direct and witty.`,
+    contents: `Forneça uma análise de viabilidade técnica ultra-rápida de 1 frase para: "${input}". Seja direto, em português.`,
   });
-  return response.text || "Insight unavailable.";
+  return response.text || "Insight indisponível.";
 };
 
 /**
@@ -61,7 +61,7 @@ export const createArchitectChatSession = (): Chat => {
   return ai.chats.create({
     model: 'gemini-3-pro-preview',
     config: {
-      systemInstruction: "You are a Senior Software Architect. Help the user refine their ideas, suggest patterns, and solve technical constraints. Be concise but deep.",
+      systemInstruction: "Você é um Arquiteto de Software Sênior. Ajude o usuário a refinar suas ideias, sugira padrões e resolva restrições técnicas. Seja conciso, mas profundo. Responda em português.",
     },
   });
 };
@@ -72,14 +72,14 @@ export const createArchitectChatSession = (): Chat => {
  * 2. Executes searches in parallel using SearchService.
  * 3. Injects facts into the LLM prompt to generate the JSON analysis.
  */
-export const analyzeProjectRequirements = async (description: string): Promise<AnalysisResult> => {
+export const analyzeProjectRequirements = async (description: string, projetoId: string): Promise<AnalysisResult> => {
   const ai = getAIClient();
 
   // 1. Define Search Vectors
   const queries = [
-    `Technical feasibility and deprecated libraries for: ${description}`,
-    `Market competitors and similar products for: ${description}`,
-    `Legal compliance and regulations for: ${description}`
+    `Viabilidade técnica e bibliotecas depreciadas para: ${description}`,
+    `Concorrentes de mercado e produtos similares para: ${description}`,
+    `Regulamentações e compliance legal para: ${description}`
   ];
 
   // 2. Parallel Execution (RAG Retrieval)
@@ -94,7 +94,7 @@ export const analyzeProjectRequirements = async (description: string): Promise<A
 
   // 3. Construct Context from Retrieval
   const contextString = searchResults.map(r => 
-    `### FACT (${r.query})\n${r.summary}`
+    `### FATO (${r.query})\n${r.summary}`
   ).join("\n\n");
 
   const allSources: Source[] = searchResults.flatMap(r => r.sources);
@@ -103,45 +103,37 @@ export const analyzeProjectRequirements = async (description: string): Promise<A
 
   // 4. Final Generation with Grounded Context
   const prompt = `
-    Analyze the following project description and breakdown technical features.
+    Analise a seguinte descrição de projeto e detalhe as funcionalidades técnicas em português.
     
-    PROJECT: ${description}
+    PROJETO: ${description}
 
-    CONTEXTUAL FACTS (GROUNDING DATA):
+    FATOS CONTEXTUAIS (DADOS DE APOIO):
     ${contextString}
     
-    INSTRUCTIONS:
-    - Use the provided facts to validate feasibility and risk.
-    - If a technology mentioned in facts is deprecated, mark risk as 'Red'.
-    - If competitors exist, mark 'valuable' based on differentiation.
+    INSTRUÇÕES:
+    - Use os fatos para validar viabilidade e risco.
+    - Se uma tecnologia mencionada nos fatos for depreciada, marque o risco como 'Alto'.
+    - Se existirem concorrentes, avalie o 'valor_negocio' com base na diferenciação.
     
-    Return a JSON array of features matching the schema.
+    Retorne um array JSON de funcionalidades que corresponda ao schema.
   `;
 
   // Schema definition for strict JSON output
-  const featureSchema = {
+  const funcionalidadeSchema = {
     type: Type.ARRAY,
     items: {
       type: Type.OBJECT,
       properties: {
-        id: { type: Type.STRING },
-        name: { type: Type.STRING },
-        description: { type: Type.STRING },
-        scores: {
-          type: Type.OBJECT,
-          properties: {
-            valuable: { type: Type.BOOLEAN },
-            usable: { type: Type.BOOLEAN },
-            feasible: { type: Type.STRING, enum: ["High", "Medium", "Low"] },
-            wow: { type: Type.BOOLEAN },
-          },
-          required: ["valuable", "usable", "feasible", "wow"]
-        },
-        size: { type: Type.STRING, enum: ["P", "M", "G"] },
-        risk: { type: Type.STRING, enum: ["Red", "Yellow", "Green"] },
-        type: { type: Type.STRING, enum: ["UI", "Logic", "Database"] },
+        id: { type: Type.STRING, description: "Um UUID aleatório para a funcionalidade." },
+        projeto_id: { type: Type.STRING, description: `ID do projeto ao qual pertence (usar '${projetoId}').` },
+        titulo: { type: Type.STRING },
+        descricao: { type: Type.STRING },
+        tamanho_camiseta: { type: Type.STRING, enum: ["P", "M", "G"] },
+        risco: { type: Type.STRING, enum: ["Alto", "Médio", "Baixo"] },
+        valor_negocio: { type: Type.NUMBER, description: "Um score de 1 a 10 para o valor de negócio percebido." },
+        fator_uau: { type: Type.BOOLEAN, description: "Se esta funcionalidade surpreenderia positivamente o usuário." },
       },
-      required: ["id", "name", "description", "scores", "size", "risk", "type"]
+      required: ["id", "projeto_id", "titulo", "descricao", "tamanho_camiseta", "risco", "valor_negocio", "fator_uau"]
     }
   };
 
@@ -150,19 +142,20 @@ export const analyzeProjectRequirements = async (description: string): Promise<A
     contents: prompt,
     config: {
       responseMimeType: "application/json",
-      responseSchema: featureSchema,
+      responseSchema: funcionalidadeSchema,
     }
   });
 
-  let features: Feature[] = [];
+  let funcionalidades: Funcionalidade[] = [];
   try {
     const text = response.text || "[]";
-    features = JSON.parse(text) as Feature[];
+    funcionalidades = JSON.parse(text) as Funcionalidade[];
     
     // Enrich with IDs if missing (safety net)
-    features = features.map(f => ({
+    funcionalidades = funcionalidades.map(f => ({
       ...f,
-      id: f.id || crypto.randomUUID()
+      id: f.id || crypto.randomUUID(),
+      projeto_id: f.projeto_id || projetoId,
     }));
 
   } catch (e) {
@@ -171,7 +164,7 @@ export const analyzeProjectRequirements = async (description: string): Promise<A
   }
 
   return {
-    features,
+    funcionalidades,
     groundingMetadata: {
       sources: uniqueSources,
       searchQueries: queries

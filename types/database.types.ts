@@ -1,4 +1,4 @@
-import { FeatureScores } from '../types';
+// FIX: Removed import for 'FeatureScores' as it is no longer used.
 
 export type Json =
   | string
@@ -37,38 +37,39 @@ export interface Database {
           updated_at?: string;
         };
       };
+      // FIX: Updated the 'features' table definition to match the 'Funcionalidade' type.
       features: {
         Row: {
           id: string;
           project_id: string;
-          name: string;
-          description: string;
-          scores: FeatureScores;
-          size: 'P' | 'M' | 'G';
-          risk: 'Red' | 'Yellow' | 'Green';
-          type: 'UI' | 'Logic' | 'Database';
+          titulo: string;
+          descricao: string;
+          tamanho_camiseta: 'P' | 'M' | 'G';
+          risco: 'Alto' | 'Médio' | 'Baixo';
+          valor_negocio: number;
+          fator_uau: boolean;
           created_at: string;
         };
         Insert: {
           id?: string;
           project_id: string;
-          name: string;
-          description: string;
-          scores: FeatureScores;
-          size: 'P' | 'M' | 'G';
-          risk: 'Red' | 'Yellow' | 'Green';
-          type: 'UI' | 'Logic' | 'Database';
+          titulo: string;
+          descricao: string;
+          tamanho_camiseta: 'P' | 'M' | 'G';
+          risco: 'Alto' | 'Médio' | 'Baixo';
+          valor_negocio: number;
+          fator_uau: boolean;
           created_at?: string;
         };
         Update: {
           id?: string;
           project_id?: string;
-          name?: string;
-          description?: string;
-          scores?: FeatureScores;
-          size?: 'P' | 'M' | 'G';
-          risk?: 'Red' | 'Yellow' | 'Green';
-          type?: 'UI' | 'Logic' | 'Database';
+          titulo?: string;
+          descricao?: string;
+          valor_negocio?: number;
+          fator_uau?: boolean;
+          tamanho_camiseta?: 'P' | 'M' | 'G';
+          risco?: 'Alto' | 'Médio' | 'Baixo';
           created_at?: string;
         };
       };

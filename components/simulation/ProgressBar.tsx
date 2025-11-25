@@ -5,6 +5,13 @@ interface ProgressBarProps {
   currentStep: Step;
 }
 
+const STEP_LABELS: Record<Step, string> = {
+  input: 'Ideia',
+  analysis: 'Análise',
+  sequencer: 'Sequência',
+  rtcf: 'Prompts'
+};
+
 const STEPS: Step[] = ['input', 'analysis', 'sequencer', 'rtcf'];
 
 export const ProgressBar: React.FC<ProgressBarProps> = ({ currentStep }) => {
@@ -22,7 +29,7 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({ currentStep }) => {
             }`}>
               {idx + 1}
             </div>
-            <span className="text-xs uppercase font-semibold text-slate-600">{step}</span>
+            <span className="text-xs uppercase font-semibold text-slate-600">{STEP_LABELS[step]}</span>
           </div>
         );
       })}

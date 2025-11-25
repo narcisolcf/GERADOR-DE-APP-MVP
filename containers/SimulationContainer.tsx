@@ -1,17 +1,21 @@
-import React, { useState } from 'react';
-import { Terminal, Play, Database, CheckCircle2, Copy, Search, ExternalLink, Bolt } from 'lucide-react';
-import { SimulationState } from '../types';
-import { MOCK_FEATURES } from '../constants';
+import React, { useState, useEffect } from 'react';
+import { Terminal, Play, Database, CheckCircle2, Copy, Search, ExternalLink, Bolt, Save } from 'lucide-react';
+import { User, getAuth, signInAnonymously } from 'firebase/auth';
+import { collection, addDoc, Timestamp, query, where, onSnapshot } from 'firebase/firestore';
+import { db, auth, isFirebaseConfigured } from '../lib/firebase';
+import { projetoConverter, funcionalidadeConverter } from '../lib/firestoreConverters';
+import { SimulationState, Funcionalidade, Projeto } from '../types';
 import { ProgressBar } from '../components/simulation/ProgressBar';
-import { FeatureCard } from '../components/simulation/FeatureCard';
+import { FuncionalidadeCard } from '../components/simulation/FuncionalidadeCard';
 import { Button } from '../components/ui/Button';
-import { analyzeProjectRequirements, getQuickInsight } from '../services/geminiService';
+import { getQuickInsight } from '../services/geminiService';
+import { analisarGerarMVP } from '../services/mvpService';
 
 export const SimulationContainer: React.FC = () => {
   const [state, setState] = useState<SimulationState>({
     step: 'input',
-    features: [],
-    selectedFeatureId: null,
+    funcionalidades: [],
+    selectedFuncionalidadeId: null,
     isProcessing: false,
     projectDescription: "Criar um marketplace de NFTs simples. Preciso que usuários conectem a carteira, vejam as artes e possam dar lances.",
     analysisSources: [],
@@ -20,12 +24,57 @@ export const SimulationContainer: React.FC = () => {
 
   const [useRealAI, setUseRealAI] = useState(false);
   const [loadingQuick, setLoadingQuick] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string>('');
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(''), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    if (!isFirebaseConfigured || !auth) return;
+    
+    signInAnonymously(auth).then((credentials) => {
+      setUser(credentials.user);
+    }).catch((error) => {
+      console.error("Anonymous auth failed:", error);
+      setToast("Falha na autenticação.");
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isFirebaseConfigured || !db || !activeProjectId) {
+      if (!isFirebaseConfigured) {
+        // No listener needed for demo mode as state is handled locally
+      } else {
+        setState(prev => ({ ...prev, funcionalidades: [] }));
+      }
+      return;
+    }
+    const q = query(
+      collection(db, "funcionalidades"),
+      where("projeto_id", "==", activeProjectId)
+    ).withConverter(funcionalidadeConverter);
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const funcs = snapshot.docs.map(doc => doc.data());
+      setState(prev => ({ ...prev, funcionalidades: funcs }));
+    }, (error) => {
+      console.error("Firestore listener error:", error);
+      setToast("Erro ao carregar funcionalidades.");
+    });
+
+    return () => unsubscribe();
+  }, [activeProjectId]);
 
   const handleQuickInsight = async () => {
     if (!state.projectDescription) return;
     setLoadingQuick(true);
     try {
-        // Uses gemini-2.5-flash-lite for ultra-fast response
         const insight = await getQuickInsight(state.projectDescription);
         setState(prev => ({ ...prev, quickInsight: insight }));
     } catch (e) {
@@ -36,39 +85,67 @@ export const SimulationContainer: React.FC = () => {
   };
 
   const handleRunAnalysis = async () => {
-    setState(prev => ({ ...prev, isProcessing: true }));
+    if (!state.projectDescription) return;
+    if (isFirebaseConfigured && !user) {
+      setToast('Aguardando autenticação anônima...');
+      return;
+    }
     
-    try {
-        let features = MOCK_FEATURES;
-        let sources: { title: string; uri: string }[] = [];
+    setState(prev => ({ ...prev, isProcessing: true, quickInsight: null }));
 
-        if (useRealAI) {
-            // RAG Flow: Async Search -> Context Injection -> Analysis
-            const result = await analyzeProjectRequirements(state.projectDescription);
-            if (result.features.length > 0) {
-                features = result.features;
-                sources = result.groundingMetadata.sources;
-            }
-        } else {
-            // Mock delay for UX
-            await new Promise(resolve => setTimeout(resolve, 1500));
-        }
+    // --- MODO DEMO (FIREBASE NÃO CONFIGURADO) ---
+    if (!isFirebaseConfigured || !db) {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        // A lógica de heurística agora é chamada pelo serviço centralizado
+        const { funcionalidades } = await analisarGerarMVP('demo-project-id', state.projectDescription, false);
         
-        setState(prev => ({ 
-            ...prev, 
-            isProcessing: false, 
+        setState(prev => ({
+            ...prev,
             step: 'analysis',
-            features,
-            analysisSources: sources
+            funcionalidades: funcionalidades,
+            isProcessing: false,
         }));
+        setToast('Análise de simulação (demo) concluída!');
+        return;
+    }
+
+    // --- MODO CLOUD (FIREBASE CONFIGURADO) ---
+    try {
+      // 1. Criar o Projeto no Firestore para obter um ID
+      const newProjetoData: Omit<Projeto, 'id'> = {
+        usuario_id: user!.uid,
+        nome_projeto: state.projectDescription.substring(0, 50) + '...',
+        descricao_problema: state.projectDescription,
+        data_criacao: Timestamp.now()
+      };
+      const projetoRef = await addDoc(collection(db, "projetos").withConverter(projetoConverter), newProjetoData);
+      const newProjectId = projetoRef.id;
+      
+      setToast('Projeto salvo! Analisando e gerando funcionalidades do MVP...');
+      
+      // 2. Chamar o serviço centralizado para analisar e persistir as funcionalidades
+      const { sources } = await analisarGerarMVP(newProjectId, state.projectDescription, useRealAI);
+      
+      // 3. Atualizar o estado da UI. O listener do Firestore cuidará de atualizar a lista de funcionalidades.
+      setActiveProjectId(newProjectId);
+
+      setState(prev => ({
+        ...prev,
+        step: 'analysis',
+        analysisSources: sources,
+      }));
+      setToast('Projeto e funcionalidades do MVP salvos com sucesso!');
+
     } catch (error) {
-        console.error("Analysis failed:", error);
-        setState(prev => ({ ...prev, isProcessing: false }));
+      console.error("Analysis failed:", error);
+      setToast("Ocorreu um erro ao salvar o projeto.");
+    } finally {
+      setState(prev => ({ ...prev, isProcessing: false }));
     }
   };
 
+
   const handleSequence = () => {
-    // Sequencer logic: Transitions to next step after user approval
     setState(prev => ({ ...prev, isProcessing: true }));
     setTimeout(() => {
       setState(prev => ({ ...prev, isProcessing: false, step: 'sequencer' }));
@@ -82,7 +159,7 @@ export const SimulationContainer: React.FC = () => {
         ...prev, 
         isProcessing: false, 
         step: 'rtcf',
-        selectedFeatureId: prev.features[0]?.id 
+        selectedFuncionalidadeId: prev.funcionalidades[0]?.id 
       }));
     }, 1000);
   };
@@ -90,16 +167,15 @@ export const SimulationContainer: React.FC = () => {
   const renderInputStep = () => (
     <div className="bg-white p-8 rounded-lg shadow-lg text-center max-w-2xl mx-auto border border-slate-200">
       <Terminal className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-      <h2 className="text-2xl font-bold text-slate-800 mb-2">O que vamos construir hoje?</h2>
-      <p className="text-slate-500 mb-6">Descreva sua ideia. O motor usará Google Search para validar viabilidade técnica e de mercado.</p>
+      <h2 className="text-2xl font-bold text-slate-800 mb-2">Qual é a sua grande ideia?</h2>
+      <p className="text-slate-500 mb-6">Descreva o problema que seu aplicativo resolve. A IA usará o Google Search para analisar o mercado e a tecnologia.</p>
       
       <div className="relative mb-4">
         <textarea 
             className="w-full h-32 p-4 bg-slate-50 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none resize-none font-mono text-sm"
             value={state.projectDescription}
-            onChange={(e) => setState(prev => ({ ...prev, projectDescription: e.target.value }))}
+            onChange={(e) => setState(prev => ({ ...prev, projectDescription: e.target.value, quickInsight: null }))}
         />
-        {/* Quick Insight Overlay */}
         {state.quickInsight && (
             <div className="absolute -bottom-10 left-0 right-0 animate-in fade-in slide-in-from-top-2">
                 <div className="bg-yellow-50 text-yellow-800 text-xs text-left p-3 rounded border border-yellow-200 shadow-sm flex items-start gap-2">
@@ -111,17 +187,18 @@ export const SimulationContainer: React.FC = () => {
       </div>
 
       <div className="flex flex-col items-center gap-4 mb-6 mt-12">
-          <div className="flex items-center gap-2 text-sm text-slate-500 bg-slate-50 p-2 px-4 rounded border border-slate-200">
+          <div className={`flex items-center gap-2 text-sm text-slate-500 bg-slate-50 p-2 px-4 rounded border border-slate-200 transition-opacity ${!isFirebaseConfigured ? 'opacity-60' : ''}`}>
               <input 
                 type="checkbox" 
                 id="useAI" 
                 checked={useRealAI} 
                 onChange={(e) => setUseRealAI(e.target.checked)}
-                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                disabled={!isFirebaseConfigured}
               />
               <label htmlFor="useAI" className="flex items-center cursor-pointer">
                 <Search className="w-3 h-3 mr-1.5" />
-                Ativar Google Search Grounding (Requer API Key)
+                Usar IA com Google Search (Requer API Key)
               </label>
           </div>
           
@@ -131,21 +208,28 @@ export const SimulationContainer: React.FC = () => {
                 onClick={handleQuickInsight}
                 isLoading={loadingQuick}
                 className="flex-1 md:flex-none border border-slate-300 bg-white"
-                disabled={!useRealAI}
+                disabled={!useRealAI || !isFirebaseConfigured}
              >
                 <Bolt className="w-4 h-4 mr-2 text-yellow-600" />
-                Instant Check
+                Insight Rápido
              </Button>
 
             <Button 
                 onClick={handleRunAnalysis} 
                 isLoading={state.isProcessing}
                 className="flex-1 md:flex-none"
+                disabled={!state.projectDescription.trim() || (isFirebaseConfigured && !user)}
             >
-                {!state.isProcessing && <Play className="w-4 h-4 mr-2" />}
-                Iniciar Análise & Grounding
+                {state.isProcessing ? "Processando..." : (
+                  isFirebaseConfigured ?
+                  <><Save className="w-4 h-4 mr-2" /> Teste de Deploy: Analisar MVP</> :
+                  <><Play className="w-4 h-4 mr-2" /> Executar Simulação (Demo)</>
+                )}
             </Button>
           </div>
+          {!isFirebaseConfigured && (
+              <p className="text-xs text-slate-400 mt-2">Modo Demo: O salvamento na nuvem está desabilitado. Configure o Firebase em <code>lib/firebase.ts</code> para ativar.</p>
+          )}
       </div>
     </div>
   );
@@ -154,22 +238,25 @@ export const SimulationContainer: React.FC = () => {
     <div className="animate-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
-           <h3 className="text-lg font-bold text-slate-800">1. Validação dos 4 Pilares</h3>
-           <p className="text-sm text-slate-500">Funcionalidades validadas via Search Grounding</p>
+           <h3 className="text-lg font-bold text-slate-800">Passo 1: Funcionalidades Analisadas</h3>
+           <p className="text-sm text-slate-500">Funcionalidades geradas pela IA e validadas com dados reais.</p>
         </div>
         <Button onClick={handleSequence} isLoading={state.isProcessing} variant="success">
-          Aprovar e Gerar Ondas →
+          Sequenciar MVP →
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        {state.features.map(f => <FeatureCard key={f.id} feature={f} />)}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 min-h-[100px]">
+        {state.funcionalidades.length > 0 ? 
+            state.funcionalidades.map(f => <FuncionalidadeCard key={f.id} funcionalidade={f} />) :
+            <p className="text-slate-500 text-sm col-span-3 text-center pt-8">Nenhuma funcionalidade encontrada para este projeto.</p>
+        }
       </div>
 
       {state.analysisSources.length > 0 && (
           <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4">
               <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center">
-                  <Search className="w-3 h-3 mr-1" /> Fontes Verificadas (Grounding)
+                  <Search className="w-3 h-3 mr-1" /> Fontes de Dados (Grounding)
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                   {state.analysisSources.slice(0, 6).map((source, idx) => (
@@ -191,8 +278,8 @@ export const SimulationContainer: React.FC = () => {
       <div className="mt-4 bg-blue-50 text-blue-800 p-3 rounded text-sm flex items-start">
         <Database className="w-4 h-4 mr-2 mt-0.5 shrink-0" />
         <p>
-          O sistema utilizou dados reais da web para calibrar a viabilidade técnica e pontuação de risco. 
-          {state.analysisSources.length > 0 && ` Consultadas ${state.analysisSources.length} fontes.`}
+          A IA usou dados da web para calibrar a viabilidade técnica e o risco.
+          {state.analysisSources.length > 0 && ` Fontes consultadas: ${state.analysisSources.length}.`}
         </p>
       </div>
     </div>
@@ -201,29 +288,28 @@ export const SimulationContainer: React.FC = () => {
   const renderSequencerStep = () => (
     <div className="animate-in slide-in-from-bottom-4 duration-500">
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-bold text-slate-800">2. O Sequenciador (Plano de MVP)</h3>
+        <h3 className="text-lg font-bold text-slate-800">Passo 2: Sequenciador de MVP</h3>
         <Button onClick={handleGeneratePrompts} isLoading={state.isProcessing} variant="purple">
-           Gerar Prompts RTCF →
+           Finalizar e Gerar Prompts →
         </Button>
       </div>
 
       <div className="space-y-6">
-        {/* Wave 1 logic is handled by slicing the validated features */}
         <div className="border-2 border-dashed border-slate-300 rounded-lg p-4 bg-slate-50 relative">
-          <span className="absolute -top-3 left-4 bg-slate-200 text-slate-600 px-2 text-xs font-bold uppercase tracking-wider">Onda 1 (MVP)</span>
+          <span className="absolute -top-3 left-4 bg-slate-200 text-slate-600 px-2 text-xs font-bold uppercase tracking-wider">Onda 1 (MVP Essencial)</span>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-            {state.features.slice(0, 2).map(f => <FeatureCard key={f.id} feature={f} />)}
+            {state.funcionalidades.slice(0, 2).map(f => <FuncionalidadeCard key={f.id} funcionalidade={f} />)}
           </div>
           <div className="mt-3 text-xs text-green-600 flex items-center justify-end font-mono">
-            <CheckCircle2 className="w-3 h-3 mr-1" /> Constraints Atendidas: Max items, Risk Balanced
+            <CheckCircle2 className="w-3 h-3 mr-1" /> Critérios Atendidos: Prioridade de negócio, Balanço de Risco
           </div>
         </div>
         
-        {state.features.length > 2 && (
+        {state.funcionalidades.length > 2 && (
              <div className="opacity-75 border-2 border-dashed border-slate-200 rounded-lg p-4 bg-slate-50/50 relative">
-             <span className="absolute -top-3 left-4 bg-slate-100 text-slate-400 px-2 text-xs font-bold uppercase tracking-wider">Backlog (Next Waves)</span>
+             <span className="absolute -top-3 left-4 bg-slate-100 text-slate-400 px-2 text-xs font-bold uppercase tracking-wider">Backlog (Próximas Entregas)</span>
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-               {state.features.slice(2).map(f => <FeatureCard key={f.id} feature={f} />)}
+               {state.funcionalidades.slice(2).map(f => <FuncionalidadeCard key={f.id} funcionalidade={f} />)}
              </div>
            </div>
         )}
@@ -232,48 +318,52 @@ export const SimulationContainer: React.FC = () => {
   );
 
   const renderRTCFStep = () => {
-    const selectedFeature = state.features.find(f => f.id === state.selectedFeatureId);
+    const selectedFuncionalidade = state.funcionalidades.find(f => f.id === state.selectedFuncionalidadeId);
     
     return (
         <div className="animate-in slide-in-from-bottom-4 duration-500 flex flex-col lg:flex-row gap-6 h-[600px]">
-            <div className="w-full lg:w-1/3 overflow-y-auto pr-2 space-y-2">
-                {state.features.map(f => (
-                <button
-                    key={f.id}
-                    onClick={() => setState(prev => ({ ...prev, selectedFeatureId: f.id }))}
-                    className={`w-full text-left p-3 rounded border transition-all ${
-                    state.selectedFeatureId === f.id 
-                        ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-500' 
-                        : 'bg-white border-slate-200 hover:bg-slate-50'
-                    }`}
-                >
-                    <div className="font-semibold text-sm text-slate-800">{f.name}</div>
-                    <div className="text-xs text-slate-500 mt-1 flex justify-between">
-                    <span>{f.type}</span>
-                    <span>{f.size}</span>
-                    </div>
-                </button>
-                ))}
-            </div>
+             <div className="flex-shrink-0 lg:w-1/3">
+                 <h3 className="text-lg font-bold text-slate-800 mb-2">Passo 3: Prompts Gerados (RTCF)</h3>
+                <div className="overflow-y-auto pr-2 space-y-2 max-h-[550px]">
+                    {state.funcionalidades.map(f => (
+                    <button
+                        key={f.id}
+                        onClick={() => setState(prev => ({ ...prev, selectedFuncionalidadeId: f.id }))}
+                        className={`w-full text-left p-3 rounded border transition-all ${
+                        state.selectedFuncionalidadeId === f.id 
+                            ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-500' 
+                            : 'bg-white border-slate-200 hover:bg-slate-50'
+                        }`}
+                    >
+                        <div className="font-semibold text-sm text-slate-800">{f.titulo}</div>
+                        <div className="text-xs text-slate-500 mt-1 flex justify-between">
+                        <span>Tamanho: {f.tamanho_camiseta}</span>
+                        <span>Risco: {f.risco}</span>
+                        </div>
+                    </button>
+                    ))}
+                </div>
+             </div>
 
             <div className="w-full lg:w-2/3 bg-slate-900 rounded-lg border border-slate-700 flex flex-col overflow-hidden">
                  <div className="bg-slate-950 p-2 px-4 border-b border-slate-800 flex justify-between items-center">
-                    <span className="text-xs text-slate-400 font-mono">generated_prompt.md</span>
+                    <span className="text-xs text-slate-400 font-mono">prompt_gerado.md</span>
                     <button className="text-slate-400 hover:text-white"><Copy className="w-4 h-4" /></button>
                  </div>
                  <div className="p-6 overflow-auto font-mono text-sm text-slate-300 whitespace-pre-wrap">
-                    {selectedFeature ? (
+                    {selectedFuncionalidade ? (
                         <>
-                        <span className="text-purple-400"># ROLE</span>{"\n"}
-                        Act as a Senior {selectedFeature.type === 'UI' ? 'Frontend' : 'Backend'} Engineer.{"\n\n"}
-                        <span className="text-purple-400"># TASK</span>{"\n"}
-                        Implement: {selectedFeature.name}.{"\n"}
-                        Context: {selectedFeature.description}{"\n\n"}
-                        <span className="text-purple-400"># SOC RULES</span>{"\n"}
-                        - Split logic and UI.{"\n"}
-                        - Use strict typing.
+                        <span className="text-purple-400"># PAPEL</span>{"\n"}
+                        Você é um Engenheiro de Software Sênior especialista em TypeScript e React.{"\n\n"}
+                        <span className="text-purple-400"># TAREFA</span>{"\n"}
+                        Desenvolva a funcionalidade: {selectedFuncionalidade.titulo}.{"\n"}
+                        Descrição: {selectedFuncionalidade.descricao}{"\n\n"}
+                        <span className="text-purple-400"># DIRETRIZES</span>{"\n"}
+                        - Crie componentes de UI puros (dumb components).{"\n"}
+                        - Utilize TypeScript para todas as interfaces e lógica.{"\n"}
+                        - Foque em um código limpo, legível e modular.
                         </>
-                    ) : "Select a feature to view prompt."}
+                    ) : "Selecione uma funcionalidade à esquerda para ver o prompt de desenvolvimento gerado."}
                  </div>
             </div>
         </div>
@@ -282,6 +372,12 @@ export const SimulationContainer: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {toast && (
+        <div className="fixed bottom-24 right-6 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg animate-fade-in z-50">
+          <CheckCircle2 className="inline w-4 h-4 mr-2" />
+          {toast}
+        </div>
+      )}
       <ProgressBar currentStep={state.step} />
       {state.step === 'input' && renderInputStep()}
       {state.step === 'analysis' && renderAnalysisStep()}

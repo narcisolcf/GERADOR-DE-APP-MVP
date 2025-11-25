@@ -23,38 +23,38 @@ export const ArchitectureView: React.FC = () => (
         <FlowStep 
           color="border-purple-500" 
           icon={<Terminal className="w-6 h-6 text-purple-400" />} 
-          title="User Input" 
-          subtitle="Ideia Vaga" 
+          title="Entrada do Usuário" 
+          subtitle="Descrição do problema" 
         />
         <ArrowRight className="hidden md:block text-slate-600 self-center" />
         <FlowStep 
           color="border-yellow-500" 
-          stage="Stage 1"
+          stage="Estágio 1"
           icon={<Layers className="w-6 h-6 text-yellow-400" />} 
-          title="Lean Filter" 
-          subtitle="Validation & Sizing" 
+          title="Análise IA (Lean)" 
+          subtitle="Validação e Esforço" 
         />
         <ArrowRight className="hidden md:block text-slate-600 self-center" />
         <FlowStep 
           color="border-green-500" 
           icon={<FileJson className="w-6 h-6 text-green-400" />} 
-          title="MVP JSON" 
-          subtitle="Schema Def" 
+          title="Definição (JSON)" 
+          subtitle="Schema das Funcionalidades" 
         />
         <ArrowRight className="hidden md:block text-slate-600 self-center" />
         <FlowStep 
           color="border-blue-500" 
-          stage="Stage 2"
+          stage="Estágio 2"
           icon={<Cpu className="w-6 h-6 text-blue-400" />} 
-          title="RTCF Engine" 
-          subtitle="Prompt Gen" 
+          title="Motor RTCF" 
+          subtitle="Geração de Prompt" 
         />
         <ArrowRight className="hidden md:block text-slate-600 self-center" />
         <FlowStep 
           color="border-green-500" 
           icon={<Code className="w-6 h-6 text-green-400" />} 
-          title="LLM Ready" 
-          subtitle="Optimized" 
+          title="Pronto para LLM" 
+          subtitle="Instrução Otimizada" 
         />
       </div>
     </div>

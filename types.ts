@@ -1,21 +1,30 @@
+import { Timestamp } from 'firebase/firestore';
+
 export type Step = 'input' | 'analysis' | 'sequencer' | 'rtcf';
 
-export interface FeatureScores {
-  valuable: boolean;
-  usable: boolean;
-  feasible: 'High' | 'Medium' | 'Low';
-  wow: boolean;
+// --- NOVAS INTERFACES FIREBASE ---
+
+export interface Projeto {
+  id: string;
+  usuario_id: string;
+  nome_projeto: string;
+  descricao_problema: string;
+  data_criacao: Timestamp;
 }
 
-export interface Feature {
+export interface Funcionalidade {
   id: string;
-  name: string;
-  description: string;
-  scores: FeatureScores;
-  size: 'P' | 'M' | 'G';
-  risk: 'Red' | 'Yellow' | 'Green';
-  type: 'UI' | 'Logic' | 'Database';
+  projeto_id: string;
+  titulo: string;
+  descricao: string;
+  tamanho_camiseta: 'P' | 'M' | 'G';
+  risco: 'Alto' | 'Médio' | 'Baixo';
+  valor_negocio: number; // Score de 1 a 10
+  fator_uau: boolean;
 }
+
+// --- FIM NOVAS INTERFACES ---
+
 
 export interface Source {
   title: string;
@@ -23,7 +32,7 @@ export interface Source {
 }
 
 export interface AnalysisResult {
-  features: Feature[];
+  funcionalidades: Funcionalidade[]; // <-- ATUALIZADO
   groundingMetadata: {
     sources: Source[];
     searchQueries: string[];
@@ -32,12 +41,12 @@ export interface AnalysisResult {
 
 export interface SimulationState {
   step: Step;
-  features: Feature[];
-  selectedFeatureId: string | null;
+  funcionalidades: Funcionalidade[]; // <-- ATUALIZADO
+  selectedFuncionalidadeId: string | null; // <-- ATUALIZADO
   isProcessing: boolean;
   projectDescription: string;
   analysisSources: Source[];
-  quickInsight: string | null; // Added for Flash-Lite response
+  quickInsight: string | null;
 }
 
 export type AspectRatio = '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '9:16' | '16:9' | '21:9';
