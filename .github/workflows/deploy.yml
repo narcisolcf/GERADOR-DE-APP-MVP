@@ -9,12 +9,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      # CORREÇÃO CRÍTICA: Mudamos de 'ci' para 'install' para funcionar sem lockfile
+      # Instala as dependências
       - run: npm install
       
-      - run: npm run build
+      # CORREÇÃO AQUI: Injetamos a chave de API durante o build
+      - name: Build Project
+        run: npm run build
+        env:
+          # O Vite exige que variáveis comecem com VITE_ para serem visíveis no navegador
+          # Estamos pegando o segredo GOOGLE_API_KEY e passando para o código
+          VITE_GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          VITE_GEMINI_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
       
-      # Passo de Deploy simplificado usando o Token que você já configurou
+      # Passo de Deploy usando o Token
       - name: Deploy to Firebase
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
